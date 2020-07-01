@@ -1,7 +1,6 @@
-package main
+package telelib
 
 import (
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
@@ -11,31 +10,23 @@ import (
 	parsetorrentname "github.com/middelink/go-parse-torrent-name"
 )
 
-type rawFileInfo struct {
+// RawFileInfo retrieves the raw information from the file name.
+type RawFileInfo struct {
 	FileName string
 	Season   int
 	Episode  int
 	Series   string
 }
 
-type fileRename struct {
+// FileRename keeps both the old filename and the new filename.
+type FileRename struct {
 	OldFileName string
 	NewFileName string
 }
 
-func main() {
-	for _, v := range parseFiles(getFiles()) {
-		fmt.Println(v)
-	}
-
-	var fileList []fileRename
-	fileList = append(fileList, fileRename{"test.txt", "test_1.txt"})
-	fileList = append(fileList, fileRename{"test2.txt", "test_2.txt"})
-	renameFiles(fileList)
-}
-
-func parseFiles(fileList []string) []rawFileInfo {
-	var temp []rawFileInfo
+// ParseFiles parses a file list from GetFiles()
+func ParseFiles(fileList []string) []RawFileInfo {
+	var temp []RawFileInfo
 	for _, fileName := range fileList {
 		parsed, err := parsetorrentname.Parse(fileName)
 
@@ -45,15 +36,16 @@ func parseFiles(fileList []string) []rawFileInfo {
 
 		// Remove anything that isn't a video file.
 		if parsed.Container != "" {
-			temp = append(temp, rawFileInfo{fileName, parsed.Season, parsed.Episode, parsed.Title})
+			temp = append(temp, RawFileInfo{fileName, parsed.Season, parsed.Episode, parsed.Title})
 		}
 	}
 
 	return temp
 }
 
-func getFiles() []string {
-	files, err := ioutil.ReadDir(".")
+// GetFiles retrieves a list of video files from the current directory.
+func GetFiles(directory string) []string {
+	files, err := ioutil.ReadDir(directory)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -68,7 +60,8 @@ func getFiles() []string {
 	return fileList
 }
 
-func renameFiles(renameList []fileRename) {
+// RenameFiles renames the list of files given.
+func RenameFiles(renameList []FileRename) {
 	for _, file := range renameList {
 		err := os.Rename(file.OldFileName, file.NewFileName)
 
