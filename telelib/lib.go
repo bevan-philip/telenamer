@@ -3,7 +3,10 @@ package telelib
 import (
 	"io/ioutil"
 	"log"
+	"net/http"
 	"os"
+
+	"github.com/pioz/tvdb"
 
 	// While this program doesn't support piracy, torrent names are typically some of the most varied and
 	// file names - ergo, a torrent name parser will be far less brittle.
@@ -18,10 +21,32 @@ type RawFileInfo struct {
 	Series   string
 }
 
+// ParsedFileInfo is the info about the file retrieved from an API provider.
+type ParsedFileInfo struct {
+	FileName    string
+	Season      int
+	Episode     int
+	EpisodeName string
+	Series      string
+}
+
 // FileRename keeps both the old filename and the new filename.
 type FileRename struct {
 	OldFileName string
 	NewFileName string
+}
+
+// TVDBLogin replicates https://github.com/pioz/tvdb/blob/master/client.go's Client struct.
+type TVDBLogin struct {
+	// The TVDB API key, User key, User name. You can get them here http://thetvdb.com/?tab=apiregister
+	Apikey   string `json:"apikey"`
+	Userkey  string `json:"userkey"`
+	Username string `json:"username"`
+	// The language with which you want to obtain the data (if not set english is
+	// used)
+	Language string
+	token    string
+	client   http.Client
 }
 
 // ParseFiles parses a file list from GetFiles()
@@ -69,4 +94,33 @@ func RenameFiles(renameList []FileRename) {
 			log.Fatal(err)
 		}
 	}
+}
+
+// RetrieveEpisodeInfo retrieves the information for a episode.
+func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) ParsedFileInfo {
+	c := tvdb.Client{Apikey: login.Apikey, Userkey: login.Userkey, Username: login.Username}
+	newFileInfo := ParsedFileInfo{FileName: fileInfo.FileName, Season: fileInfo.Season}
+
+	err := c.Login()
+	if err != nil {
+		panic(err)
+	}
+
+	series, err := c.BestSearch(fileInfo.Series)
+	if err != nil {
+		panic(err)
+	}
+
+	newFileInfo.Series = series.SeriesName
+	err = c.GetSeriesEpisodes(&series, nil)
+	if err != nil {
+		panic(err)
+	}
+
+	episode := series.GetEpisode(fileInfo.Season, fileInfo.Episode)
+
+	newFileInfo.EpisodeName = episode.EpisodeName
+	newFileInfo.Episode = episode.AiredEpisodeNumber
+
+	return newFileInfo
 }
