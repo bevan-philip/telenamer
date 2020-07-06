@@ -24,7 +24,7 @@ func main() {
 
 	var fileList []telelib.FileRename
 	for _, v := range telelib.ParseFiles(telelib.GetFiles(".")) {
-		fmt.Print(telelib.RetrieveEpisodeInfo(v, login))
+		fmt.Print(telelib.RetrieveEpisodeInfo(v, login).NewFileName("$s - $0zx$e - $n"))
 	}
 
 	// fileList = append(fileList, telelib.FileRename{OldFileName: "test.txt", NewFileName: "test_1.txt"})

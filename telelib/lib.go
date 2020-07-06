@@ -1,10 +1,13 @@
 package telelib
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/pioz/tvdb"
 
@@ -36,7 +39,7 @@ type FileRename struct {
 	NewFileName string
 }
 
-// TVDBLogin replicates https://github.com/pioz/tvdb/blob/master/client.go's Client struct.
+// TVDBLogin replicates https://github.com/pioz/tvdb/blob/master/client.go's Client struct, with some additional JSON support.
 type TVDBLogin struct {
 	// The TVDB API key, User key, User name. You can get them here http://thetvdb.com/?tab=apiregister
 	Apikey   string `json:"apikey"`
@@ -110,17 +113,31 @@ func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) ParsedFileInfo {
 	if err != nil {
 		panic(err)
 	}
-
+	// Retrieving this info from the API ensures capitalisation is correct.
 	newFileInfo.Series = series.SeriesName
+
 	err = c.GetSeriesEpisodes(&series, nil)
 	if err != nil {
 		panic(err)
 	}
-
 	episode := series.GetEpisode(fileInfo.Season, fileInfo.Episode)
 
 	newFileInfo.EpisodeName = episode.EpisodeName
 	newFileInfo.Episode = episode.AiredEpisodeNumber
 
 	return newFileInfo
+}
+
+// NewFileName returns a file name.
+func (p ParsedFileInfo) NewFileName(customFormat string) string {
+	// Due to optional format strings $0e and $0z, I'm going to keep this simple text replacement vs a smarter templating
+	// system for now...
+	customFormat = strings.ReplaceAll(customFormat, "$s", p.Series)
+	customFormat = strings.ReplaceAll(customFormat, "$n", p.EpisodeName)
+	customFormat = strings.ReplaceAll(customFormat, "$e", strconv.Itoa(p.Episode))
+	customFormat = strings.ReplaceAll(customFormat, "$0e", fmt.Sprintf("%02d", p.Episode))
+	customFormat = strings.ReplaceAll(customFormat, "$z", strconv.Itoa(p.Season))
+	customFormat = strings.ReplaceAll(customFormat, "$0z", fmt.Sprintf("%02d", p.Season))
+
+	return customFormat
 }
