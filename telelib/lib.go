@@ -65,15 +65,24 @@ func ParseFiles(fileList []string) []RawFileInfo {
 		}
 
 		// Checks if file is a subtitle. Not included in base parser.
-		re, err := regexp.Compile(`(\.srt|\.txt|\.vtt\.scc\.stl)`)
+		subtitleRe, err := regexp.Compile(`(\.srt|\.txt|\.vtt\.scc\.stl)`)
 		if err != nil {
 			log.Fatal(err)
 		}
 
-		subtitle := re.FindString(fileName)
+		subtitle := subtitleRe.FindString(fileName)
+
+		// ptn sometimes fails with well defined file names, that have seperators - this aims to find such
+		// seperators and strip them from the parsed Title.
+		// e.g. "Test - EG", the Title would be "Test - ", instead of "Test".
+		dividerRe, err := regexp.Compile(` ?(-|\||:) ?$`)
+		if err != nil {
+			log.Fatal(err)
+		}
 
 		// Remove anything that isn't a video file.
 		if parsed.Container != "" {
+			parsed.Title = dividerRe.ReplaceAllString(parsed.Title, "")
 			temp = append(temp, RawFileInfo{fileName, parsed.Container, parsed.Season, parsed.Episode, parsed.Title})
 		} else if subtitle != "" {
 			// Note: while Golang does interpret strings as UTF8, and thus, if we were dealing with unknown strings, subtitle[1:]
@@ -105,11 +114,7 @@ func GetFiles(directory string) []string {
 // RenameFiles renames the list of files given.
 func RenameFiles(renameList []FileRename) {
 	for _, file := range renameList {
-		err := os.Rename(file.OldFileName, file.NewFileName)
-
-		if err != nil {
-			log.Fatal(err)
-		}
+		file.RenameFile()
 	}
 }
 
@@ -120,21 +125,25 @@ func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) ParsedFileInfo {
 
 	err := c.Login()
 	if err != nil {
-		panic(err)
+		log.Fatal("Error in logging in.")
 	}
 
 	series, err := c.BestSearch(fileInfo.Series)
 	if err != nil {
-		panic(err)
+		log.Fatal("Error searching for series.")
 	}
 	// Retrieving this info from the API ensures capitalisation is correct.
 	newFileInfo.Series = series.SeriesName
 
 	err = c.GetSeriesEpisodes(&series, nil)
 	if err != nil {
-		panic(err)
+		log.Fatal("Error in searching for episode.")
 	}
 	episode := series.GetEpisode(fileInfo.Season, fileInfo.Episode)
+
+	if episode == nil {
+		log.Fatal("Unable to find episode.")
+	}
 
 	newFileInfo.EpisodeName = episode.EpisodeName
 	newFileInfo.Episode = episode.AiredEpisodeNumber
@@ -154,4 +163,19 @@ func (p ParsedFileInfo) NewFileName(customFormat string) string {
 	customFormat = strings.ReplaceAll(customFormat, "$0z", fmt.Sprintf("%02d", p.Season))
 
 	return fmt.Sprintf("%s.%s", customFormat, p.Container)
+}
+
+// RenameFile renames the file based on the contents of the struct.
+func (file FileRename) RenameFile() {
+	winInvalidName, err := regexp.Compile(`(\?|\\|\/|\*|\:|"|<|>|\|)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	file.NewFileName = winInvalidName.ReplaceAllString(file.NewFileName, "")
+	err = os.Rename(file.OldFileName, file.NewFileName)
+
+	if err != nil {
+		log.Fatal("Error in renaming files. ", err)
+	}
 }
