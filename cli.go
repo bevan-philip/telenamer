@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"os"
 
 	"github.com/arrivance/telenamer/telelib"
@@ -24,10 +25,10 @@ func main() {
 
 	var fileList []telelib.FileRename
 	for _, v := range telelib.ParseFiles(telelib.GetFiles(".")) {
-		fmt.Print(telelib.RetrieveEpisodeInfo(v, login).NewFileName("$s - $0zx$e - $n"))
+		epInfo := telelib.RetrieveEpisodeInfo(v, login)
+		fileList = append(fileList, telelib.FileRename{OldFileName: epInfo.FileName, NewFileName: epInfo.NewFileName("$s - $0zx$e - $n")})
 	}
 
-	// fileList = append(fileList, telelib.FileRename{OldFileName: "test.txt", NewFileName: "test_1.txt"})
-	// fileList = append(fileList, telelib.FileRename{OldFileName: "test2.txt", NewFileName: "test_2.txt"})
-	telelib.RenameFiles(fileList)
+	log.Print(fileList)
+	// telelib.RenameFiles(fileList)
 }

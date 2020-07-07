@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -18,15 +19,17 @@ import (
 
 // RawFileInfo retrieves the raw information from the file name.
 type RawFileInfo struct {
-	FileName string
-	Season   int
-	Episode  int
-	Series   string
+	FileName  string
+	Container string
+	Season    int
+	Episode   int
+	Series    string
 }
 
 // ParsedFileInfo is the info about the file retrieved from an API provider.
 type ParsedFileInfo struct {
 	FileName    string
+	Container   string
 	Season      int
 	Episode     int
 	EpisodeName string
@@ -57,14 +60,25 @@ func ParseFiles(fileList []string) []RawFileInfo {
 	var temp []RawFileInfo
 	for _, fileName := range fileList {
 		parsed, err := parsetorrentname.Parse(fileName)
-
 		if err != nil {
 			log.Fatal(err)
 		}
 
+		// Checks if file is a subtitle. Not included in base parser.
+		re, err := regexp.Compile(`(\.srt|\.txt|\.vtt\.scc\.stl)`)
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		subtitle := re.FindString(fileName)
+
 		// Remove anything that isn't a video file.
 		if parsed.Container != "" {
-			temp = append(temp, RawFileInfo{fileName, parsed.Season, parsed.Episode, parsed.Title})
+			temp = append(temp, RawFileInfo{fileName, parsed.Container, parsed.Season, parsed.Episode, parsed.Title})
+		} else if subtitle != "" {
+			// Note: while Golang does interpret strings as UTF8, and thus, if we were dealing with unknown strings, subtitle[1:]
+			// would be error prone, we both know the string exists, and starts with ".", therefore, there is no risk.
+			temp = append(temp, RawFileInfo{fileName, subtitle[1:], parsed.Season, parsed.Episode, parsed.Title})
 		}
 	}
 
@@ -102,7 +116,7 @@ func RenameFiles(renameList []FileRename) {
 // RetrieveEpisodeInfo retrieves the information for a episode.
 func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) ParsedFileInfo {
 	c := tvdb.Client{Apikey: login.Apikey, Userkey: login.Userkey, Username: login.Username}
-	newFileInfo := ParsedFileInfo{FileName: fileInfo.FileName, Season: fileInfo.Season}
+	newFileInfo := ParsedFileInfo{FileName: fileInfo.FileName, Season: fileInfo.Season, Container: fileInfo.Container}
 
 	err := c.Login()
 	if err != nil {
@@ -139,5 +153,5 @@ func (p ParsedFileInfo) NewFileName(customFormat string) string {
 	customFormat = strings.ReplaceAll(customFormat, "$z", strconv.Itoa(p.Season))
 	customFormat = strings.ReplaceAll(customFormat, "$0z", fmt.Sprintf("%02d", p.Season))
 
-	return customFormat
+	return fmt.Sprintf("%s.%s", customFormat, p.Container)
 }
