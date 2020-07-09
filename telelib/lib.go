@@ -55,8 +55,7 @@ type TVDBLogin struct {
 	client   http.Client
 }
 
-// ParseFiles parses a file list from GetFiles()
-func ParseFiles(fileList []string) []RawFileInfo {
+func parseFiles(fileList []string, series string) []RawFileInfo {
 	var temp []RawFileInfo
 	for _, fileName := range fileList {
 		parsed, err := parsetorrentname.Parse(fileName)
@@ -80,18 +79,32 @@ func ParseFiles(fileList []string) []RawFileInfo {
 			log.Fatal(err)
 		}
 
+		if series == "" {
+			series = dividerRe.ReplaceAllString(parsed.Title, "")
+		}
+
 		// Remove anything that isn't a video file.
 		if parsed.Container != "" {
-			parsed.Title = dividerRe.ReplaceAllString(parsed.Title, "")
-			temp = append(temp, RawFileInfo{fileName, parsed.Container, parsed.Season, parsed.Episode, parsed.Title})
+			temp = append(temp, RawFileInfo{fileName, parsed.Container, parsed.Season, parsed.Episode, series})
 		} else if subtitle != "" {
 			// Note: while Golang does interpret strings as UTF8, and thus, if we were dealing with unknown strings, subtitle[1:]
 			// would be error prone, we both know the string exists, and starts with ".", therefore, there is no risk.
-			temp = append(temp, RawFileInfo{fileName, subtitle[1:], parsed.Season, parsed.Episode, parsed.Title})
+			temp = append(temp, RawFileInfo{fileName, subtitle[1:], parsed.Season, parsed.Episode, series})
 		}
 	}
 
 	return temp
+}
+
+// ParseFilesWithSeries parses a file list from GetFiles() where the title is not included within the file name.
+// This assumes all the files in a folder are of the same series (reasonable when considering it would be impossible to sort otherwise)
+func ParseFilesWithSeries(fileList []string, series string) []RawFileInfo {
+	return parseFiles(fileList, series)
+}
+
+// ParseFiles parses a file list from GetFiles()
+func ParseFiles(fileList []string) []RawFileInfo {
+	return parseFiles(fileList, "")
 }
 
 // GetFiles retrieves a list of video files from the current directory.

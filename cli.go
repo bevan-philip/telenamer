@@ -2,19 +2,27 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/arrivance/telenamer/telelib"
 )
 
 func main() {
-	loginFile, err := os.Open("login.json")
-
+	start := time.Now()
+	// Find the directory the executable is within.
+	ex, err := os.Executable()
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal("Error finding directory of process: ", err)
+	}
+	exPath := filepath.Dir(ex)
+
+	loginFile, err := os.Open(exPath + "\\login.json")
+	if err != nil {
+		log.Fatal("Could not load login.json: ", err)
 	}
 
 	defer loginFile.Close()
@@ -23,12 +31,11 @@ func main() {
 	byteValue, _ := ioutil.ReadAll(loginFile)
 	json.Unmarshal(byteValue, &login)
 
-	var fileList []telelib.FileRename
-	for _, v := range telelib.ParseFiles(telelib.GetFiles(".")) {
-		log.Print(v)
+	for _, v := range telelib.ParseFilesWithSeries(telelib.GetFiles("."), "South Park") {
 		epInfo := telelib.RetrieveEpisodeInfo(v, login)
-		fileList = append(fileList, telelib.FileRename{OldFileName: epInfo.FileName, NewFileName: epInfo.NewFileName("$s - S$0zE$0e - $n")})
+		go telelib.FileRename{OldFileName: epInfo.FileName, NewFileName: epInfo.NewFileName("$s - S$0zE$0e - $n")}.RenameFile()
 	}
 
-	telelib.RenameFiles(fileList)
+	elapsed := time.Since(start)
+	log.Printf("Program took took %s", elapsed)
 }
