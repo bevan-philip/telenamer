@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sync"
 	"time"
 
 	"github.com/arrivance/telenamer/telelib"
@@ -30,12 +31,21 @@ func main() {
 	var login telelib.TVDBLogin
 	byteValue, _ := ioutil.ReadAll(loginFile)
 	json.Unmarshal(byteValue, &login)
-
+	var wg sync.WaitGroup
 	for _, v := range telelib.ParseFilesWithSeries(telelib.GetFiles("."), "South Park") {
-		epInfo := telelib.RetrieveEpisodeInfo(v, login)
-		go telelib.FileRename{OldFileName: epInfo.FileName, NewFileName: epInfo.NewFileName("$s - S$0zE$0e - $n")}.RenameFile()
+		wg.Add(1)
+		go rename(v, login, &wg)
 	}
 
+	wg.Wait()
 	elapsed := time.Since(start)
 	log.Printf("Program took took %s", elapsed)
+}
+
+func rename(v telelib.RawFileInfo, login telelib.TVDBLogin, wg *sync.WaitGroup) {
+	defer wg.Done()
+	epInfo := telelib.RetrieveEpisodeInfo(v, login)
+	format := "$s - S$0zE$0e - $n"
+
+	telelib.FileRename{OldFileName: epInfo.FileName, NewFileName: epInfo.NewFileName(format)}.RenameFile()
 }

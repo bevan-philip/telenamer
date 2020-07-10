@@ -55,6 +55,9 @@ type TVDBLogin struct {
 	client   http.Client
 }
 
+// parseFiles parses a file list from GetFiles() and a series parameter.
+// If series is "", it will attempt to retrieve this from the file name.
+// Public functions are ParseFiles() and ParseFilesWithSeries()
 func parseFiles(fileList []string, series string) []RawFileInfo {
 	var temp []RawFileInfo
 	for _, fileName := range fileList {
