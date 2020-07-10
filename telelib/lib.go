@@ -55,45 +55,54 @@ type TVDBLogin struct {
 	client   http.Client
 }
 
+func parseFile(fileName string, series string, files chan RawFileInfo) {
+	parsed, err := parsetorrentname.Parse(fileName)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Checks if file is a subtitle. Not included in base parser.
+	subtitleRe, err := regexp.Compile(`(\.srt|\.txt|\.vtt\.scc\.stl)`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	subtitle := subtitleRe.FindString(fileName)
+
+	// ptn sometimes fails with well defined file names, that have seperators - this aims to find such
+	// seperators and strip them from the parsed Title.
+	// e.g. "Test - EG", the Title would be "Test - ", instead of "Test".
+	dividerRe, err := regexp.Compile(` ?(-|\||:) ?$`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if series == "" {
+		series = dividerRe.ReplaceAllString(parsed.Title, "")
+	}
+
+	// Remove anything that isn't a video file.
+	if parsed.Container != "" {
+		files <- RawFileInfo{fileName, parsed.Container, parsed.Season, parsed.Episode, series}
+	} else if subtitle != "" {
+		// Note: while Golang does interpret strings as UTF8, and thus, if we were dealing with unknown strings, subtitle[1:]
+		// would be error prone, we both know the string exists, and starts with ".", therefore, there is no risk.
+		files <- RawFileInfo{fileName, subtitle[1:], parsed.Season, parsed.Episode, series}
+	}
+}
+
 // parseFiles parses a file list from GetFiles() and a series parameter.
 // If series is "", it will attempt to retrieve this from the file name.
 // Public functions are ParseFiles() and ParseFilesWithSeries()
 func parseFiles(fileList []string, series string) []RawFileInfo {
 	var temp []RawFileInfo
+	files := make(chan RawFileInfo, len(fileList))
 	for _, fileName := range fileList {
-		parsed, err := parsetorrentname.Parse(fileName)
-		if err != nil {
-			log.Fatal(err)
-		}
+		go parseFile(fileName, series, files)
+	}
 
-		// Checks if file is a subtitle. Not included in base parser.
-		subtitleRe, err := regexp.Compile(`(\.srt|\.txt|\.vtt\.scc\.stl)`)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		subtitle := subtitleRe.FindString(fileName)
-
-		// ptn sometimes fails with well defined file names, that have seperators - this aims to find such
-		// seperators and strip them from the parsed Title.
-		// e.g. "Test - EG", the Title would be "Test - ", instead of "Test".
-		dividerRe, err := regexp.Compile(` ?(-|\||:) ?$`)
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		if series == "" {
-			series = dividerRe.ReplaceAllString(parsed.Title, "")
-		}
-
-		// Remove anything that isn't a video file.
-		if parsed.Container != "" {
-			temp = append(temp, RawFileInfo{fileName, parsed.Container, parsed.Season, parsed.Episode, series})
-		} else if subtitle != "" {
-			// Note: while Golang does interpret strings as UTF8, and thus, if we were dealing with unknown strings, subtitle[1:]
-			// would be error prone, we both know the string exists, and starts with ".", therefore, there is no risk.
-			temp = append(temp, RawFileInfo{fileName, subtitle[1:], parsed.Season, parsed.Episode, series})
-		}
+	for range fileList {
+		temp = append(temp, <-files)
 	}
 
 	return temp
