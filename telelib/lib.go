@@ -2,13 +2,13 @@ package telelib
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/afero"
 
 	"github.com/pioz/tvdb"
 
@@ -55,8 +55,29 @@ type TVDBLogin struct {
 	client   http.Client
 }
 
+var (
+	fs     afero.Fs
+	fsutil *afero.Afero
+)
+
+func init() {
+	// Utilise afero to handle file operations for easier testing.
+	fs = afero.NewOsFs()
+	fsutil = &afero.Afero{Fs: fs}
+}
+
 func parseFile(fileName string, series string, files chan RawFileInfo) {
-	parsed, err := parsetorrentname.Parse(fileName)
+	// ptn sometimes fails with well defined file names, that have seperators - this aims to find such
+	// seperators and strip them from the filename and title..
+	// e.g. "Test - EG", the Title would be "Test - ", instead of "Test".
+	dividerRe, err := regexp.Compile(` ?(-|\||:|\[|\]) ?`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	cleanFileName := dividerRe.ReplaceAllString(fileName, " ")
+
+	parsed, err := parsetorrentname.Parse(cleanFileName)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -69,16 +90,8 @@ func parseFile(fileName string, series string, files chan RawFileInfo) {
 
 	subtitle := subtitleRe.FindString(fileName)
 
-	// ptn sometimes fails with well defined file names, that have seperators - this aims to find such
-	// seperators and strip them from the parsed Title.
-	// e.g. "Test - EG", the Title would be "Test - ", instead of "Test".
-	dividerRe, err := regexp.Compile(` ?(-|\||:) ?$`)
-	if err != nil {
-		log.Fatal(err)
-	}
-
 	if series == "" {
-		series = dividerRe.ReplaceAllString(parsed.Title, "")
+		series = dividerRe.ReplaceAllString(parsed.Title, " ")
 	}
 
 	// Remove anything that isn't a video file.
@@ -139,9 +152,9 @@ func ParseFiles(fileList []string) []RawFileInfo {
 	return parseFilesInOrder(fileList, "")
 }
 
-// GetFiles retrieves a list of video files from the current directory.
+// GetFiles retrieves a list of files from the current directory.
 func GetFiles(directory string) []string {
-	files, err := ioutil.ReadDir(directory)
+	files, err := afero.ReadDir(fs, ".")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -219,7 +232,7 @@ func (file FileRename) RenameFile() {
 	}
 
 	file.NewFileName = winInvalidName.ReplaceAllString(file.NewFileName, "")
-	err = os.Rename(file.OldFileName, file.NewFileName)
+	err = fs.Rename(file.OldFileName, file.NewFileName)
 
 	if err != nil {
 		log.Fatal("Error in renaming files. ", err)

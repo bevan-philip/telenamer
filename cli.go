@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	confirm := true
+	confirm := false
 	format := "$s - S$0zE$0e - $n"
 
 	start := time.Now()
