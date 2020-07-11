@@ -108,15 +108,35 @@ func parseFiles(fileList []string, series string) []RawFileInfo {
 	return temp
 }
 
+// parseFilesInOrder
+// parseFiles, but slightly worse, for UX/backwards compatability.
+// The difference in execution is neglible.
+func parseFilesInOrder(fileList []string, series string) []RawFileInfo {
+	var temp []RawFileInfo
+	var fileChans []chan RawFileInfo
+
+	for _, fileName := range fileList {
+		files := make(chan RawFileInfo)
+		fileChans = append(fileChans, files)
+		go parseFile(fileName, series, files)
+	}
+
+	for _, v := range fileChans {
+		temp = append(temp, <-v)
+	}
+
+	return temp
+}
+
 // ParseFilesWithSeries parses a file list from GetFiles() where the title is not included within the file name.
 // This assumes all the files in a folder are of the same series (reasonable when considering it would be impossible to sort otherwise)
 func ParseFilesWithSeries(fileList []string, series string) []RawFileInfo {
-	return parseFiles(fileList, series)
+	return parseFilesInOrder(fileList, series)
 }
 
 // ParseFiles parses a file list from GetFiles()
 func ParseFiles(fileList []string) []RawFileInfo {
-	return parseFiles(fileList, "")
+	return parseFilesInOrder(fileList, "")
 }
 
 // GetFiles retrieves a list of video files from the current directory.
@@ -192,6 +212,7 @@ func (p ParsedFileInfo) NewFileName(customFormat string) string {
 
 // RenameFile renames the file based on the contents of the struct.
 func (file FileRename) RenameFile() {
+	// Removes characters that aren't accepted in Windows file names.
 	winInvalidName, err := regexp.Compile(`(\?|\\|\/|\*|\:|"|<|>|\|)`)
 	if err != nil {
 		log.Fatal(err)
