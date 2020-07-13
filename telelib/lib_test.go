@@ -1,7 +1,10 @@
 package telelib
 
 import (
+	"encoding/json"
+	"io/ioutil"
 	"log"
+	"os"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -54,6 +57,16 @@ func TestParseFile(t *testing.T) {
 			"",
 			RawFileInfo{FileName: "South Park - [01x03] - Volcano.mkv", Container: "mkv", Season: 1, Episode: 3, Series: "South Park"},
 		},
+		{
+			"South Park - [01x03] - Volcano.srt",
+			"",
+			RawFileInfo{FileName: "South Park - [01x03] - Volcano.srt", Container: "srt", Season: 1, Episode: 3, Series: "South Park"},
+		},
+		{
+			"Test.png",
+			"",
+			RawFileInfo{invalid: true},
+		},
 	}
 
 	for _, c := range cases {
@@ -63,7 +76,7 @@ func TestParseFile(t *testing.T) {
 		got := <-file
 
 		if got != c.want {
-			t.Errorf("parseFile(%q) == %q, want %q", c.in, got, c.want)
+			t.Errorf("parseFile(%q) == %+v\n, want %+v\n", c.in, got, c.want)
 		}
 	}
 }
@@ -86,12 +99,12 @@ func TestParseFiles(t *testing.T) {
 	for i, v := range result {
 		found := false
 		for _, x := range expected {
-			if cmp.Equal(v, x) {
+			if cmp.Equal(v, x, cmp.AllowUnexported(RawFileInfo{})) {
 				found = true
 			}
 		}
 		if found == false {
-			t.Errorf("parseFiles(%q) == %q, could not find %q", fileList, result, expected[i])
+			t.Errorf("parseFiles(%q) == %+v\n, could not find %+v\n", fileList, result, expected[i])
 		}
 	}
 }
@@ -111,8 +124,8 @@ func TestParseFilesInOrder(t *testing.T) {
 
 	result := parseFilesInOrder(fileList, "")
 
-	if !cmp.Equal(expected, result) {
-		t.Errorf("parseFilesInOrder(%q) == %q, could not find %q", fileList, result, expected)
+	if !cmp.Equal(expected, result, cmp.AllowUnexported(RawFileInfo{})) {
+		t.Errorf("parseFilesInOrder(%q) == %+v\n, could not find %+v\n", fileList, result, expected)
 	}
 }
 
@@ -166,14 +179,18 @@ func TestNewFileName(t *testing.T) {
 func TestGetFiles(t *testing.T) {
 	fs = afero.NewMemMapFs()
 	fsutil = &afero.Afero{Fs: fs}
-	afero.WriteFile(fs, "test.mp4", []byte("file b"), 0644)
-	afero.WriteFile(fs, "test2.mp4", []byte("file b"), 0644)
-	afero.WriteFile(fs, "test3.srt", []byte("file b"), 0644)
+	expected := []string{"test.mp4", "test2.mp4", "test3.srt"}
+	unexpectedDir := []string{"test dir", "test dir 2"}
 
-	defer afero.NewMemMapFs().RemoveAll(".")
+	for _, v := range expected {
+		afero.WriteFile(fs, v, []byte("random contents"), 0644)
+	}
+
+	for _, v := range unexpectedDir {
+		afero.NewMemMapFs().Mkdir(v, 0644)
+	}
 
 	result := GetFiles(".")
-	expected := []string{"test.mp4", "test2.mp4", "test3.srt"}
 
 	if !cmp.Equal(result, expected) {
 		t.Errorf("GetFiles(\".\") == %q, expected %q", result, expected)
@@ -184,19 +201,159 @@ func TestRenameFile(t *testing.T) {
 	fs = afero.NewMemMapFs()
 	fsutil = &afero.Afero{Fs: fs}
 
-	rename := FileRename{OldFileName: "test.mp4", NewFileName: "new.mp4"}
-
-	afero.WriteFile(fs, rename.OldFileName, []byte("file b"), 0644)
-	defer afero.NewMemMapFs().RemoveAll(".")
-
-	rename.RenameFile()
-	result, err := afero.Exists(fs, rename.NewFileName)
-
-	if err != nil {
-		log.Fatal(err)
+	cases := []struct {
+		in   FileRename
+		want string
+	}{
+		{
+			FileRename{OldFileName: "test.mp4", NewFileName: "new.mp4"},
+			"new.mp4",
+		},
+		{
+			FileRename{OldFileName: "test2.mp4", NewFileName: "new?2.mp4"},
+			"new2.mp4",
+		},
 	}
 
-	if !result {
-		t.Errorf("%q.RenameFile() - %q was not found", rename, rename.NewFileName)
+	for _, v := range cases {
+		afero.WriteFile(fs, v.in.OldFileName, []byte("random contents"), 0644)
+		v.in.RenameFile()
+		result, err := afero.Exists(fs, v.want)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if !result {
+			t.Errorf("%+v.RenameFile() - %q was not found", v.in, v.want)
+		}
+	}
+}
+
+func TestRetrieveEpisodeInfo(t *testing.T) {
+	loginFile, err := os.Open("login.json")
+	if err != nil {
+		log.Fatal("Could not load login.json: ", err)
+	}
+
+	defer loginFile.Close()
+
+	var login TVDBLogin
+	byteValue, _ := ioutil.ReadAll(loginFile)
+	json.Unmarshal(byteValue, &login)
+
+	cases := []struct {
+		in   RawFileInfo
+		want ParsedFileInfo
+	}{
+		{
+			RawFileInfo{Season: 4, Episode: 7, Series: "The Good Place"},
+			ParsedFileInfo{Season: 4, Episode: 7, Series: "The Good Place", EpisodeName: "Help Is Other People"},
+		},
+		{
+			RawFileInfo{Season: 4, Episode: 7, Series: "the gOOd pLAce"},
+			ParsedFileInfo{Season: 4, Episode: 7, Series: "The Good Place", EpisodeName: "Help Is Other People"},
+		},
+	}
+
+	for _, v := range cases {
+		result := RetrieveEpisodeInfo(v.in, login)
+		if !cmp.Equal(result, v.want) {
+			t.Errorf("RetrieveEpisodeInfo(%v)\n == %v\n, want %v\n", v.in, result, v.want)
+		}
+	}
+}
+
+func TestRenameFiles(t *testing.T) {
+	fs = afero.NewMemMapFs()
+	fsutil = &afero.Afero{Fs: fs}
+
+	cases := []struct {
+		in   FileRename
+		want string
+	}{
+		{
+			FileRename{OldFileName: "test.mp4", NewFileName: "new.mp4"},
+			"new.mp4",
+		},
+		{
+			FileRename{OldFileName: "test2.mp4", NewFileName: "new?2.mp4"},
+			"new2.mp4",
+		},
+	}
+
+	var expected []FileRename
+
+	for _, v := range cases {
+		afero.WriteFile(fs, v.in.OldFileName, []byte("random contents"), 0644)
+		expected = append(expected, v.in)
+	}
+
+	RenameFiles(expected)
+
+	for _, v := range cases {
+		result, err := afero.Exists(fs, v.want)
+		if err != nil {
+			log.Fatal(err)
+		}
+		if !result {
+			t.Errorf("%+v.RenameFile() - %q was not found", v.in, v.want)
+		}
+	}
+}
+
+func TestParseFilesPub(t *testing.T) {
+	fileList := []string{
+		"The Good Place - S04E07 - Help Is Other People.mkv",
+		"the.good.place.s04e12.1080p.blu.x264.mkv",
+		"The Good Place - 04x12 - Patty.mkv",
+	}
+
+	expected := []RawFileInfo{
+		{FileName: "The Good Place - S04E07 - Help Is Other People.mkv", Container: "mkv", Season: 4, Episode: 7, Series: "The Good Place"},
+		{FileName: "the.good.place.s04e12.1080p.blu.x264.mkv", Container: "mkv", Season: 4, Episode: 12, Series: "the good place"},
+		{FileName: "The Good Place - 04x12 - Patty.mkv", Container: "mkv", Season: 4, Episode: 12, Series: "The Good Place"},
+	}
+
+	result := ParseFiles(fileList)
+
+	for i, v := range result {
+		found := false
+		for _, x := range expected {
+			if cmp.Equal(v, x, cmp.AllowUnexported(RawFileInfo{})) {
+				found = true
+			}
+		}
+		if found == false {
+			t.Errorf("parseFiles(%q) == %+v\n, could not find %+v\n", fileList, result, expected[i])
+		}
+	}
+}
+
+func TestParseFilesWithSeries(t *testing.T) {
+	fileList := []string{
+		"The Good Place - S04E07 - Help Is Other People.mkv",
+		"the.good.place.s04e12.1080p.blu.x264.mkv",
+		"The Good Place - 04x12 - Patty.mkv",
+		"04x12 - Patty.srt",
+	}
+
+	expected := []RawFileInfo{
+		{FileName: "The Good Place - S04E07 - Help Is Other People.mkv", Container: "mkv", Season: 4, Episode: 7, Series: "The Good Place"},
+		{FileName: "the.good.place.s04e12.1080p.blu.x264.mkv", Container: "mkv", Season: 4, Episode: 12, Series: "The Good Place"},
+		{FileName: "The Good Place - 04x12 - Patty.mkv", Container: "mkv", Season: 4, Episode: 12, Series: "The Good Place"},
+		{FileName: "04x12 - Patty.srt", Container: "srt", Season: 4, Episode: 12, Series: "The Good Place"},
+	}
+
+	result := ParseFilesWithSeries(fileList, "The Good Place")
+
+	for i, v := range result {
+		found := false
+		for _, x := range expected {
+			if cmp.Equal(v, x, cmp.AllowUnexported(RawFileInfo{})) {
+				found = true
+			}
+		}
+		if found == false {
+			t.Errorf("parseFiles(%q) == %+v\n, could not find %+v\n", fileList, result, expected[i])
+		}
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/spf13/afero"
 
@@ -24,6 +25,7 @@ type RawFileInfo struct {
 	Season    int
 	Episode   int
 	Series    string
+	invalid   bool
 }
 
 // ParsedFileInfo is the info about the file retrieved from an API provider.
@@ -96,11 +98,14 @@ func parseFile(fileName string, series string, files chan RawFileInfo) {
 
 	// Remove anything that isn't a video file.
 	if parsed.Container != "" {
-		files <- RawFileInfo{fileName, parsed.Container, parsed.Season, parsed.Episode, series}
+		files <- RawFileInfo{fileName, parsed.Container, parsed.Season, parsed.Episode, series, false}
 	} else if subtitle != "" {
 		// Note: while Golang does interpret strings as UTF8, and thus, if we were dealing with unknown strings, subtitle[1:]
 		// would be error prone, we both know the string exists, and starts with ".", therefore, there is no risk.
-		files <- RawFileInfo{fileName, subtitle[1:], parsed.Season, parsed.Episode, series}
+		files <- RawFileInfo{fileName, subtitle[1:], parsed.Season, parsed.Episode, series, false}
+	} else {
+		// Can't just silently discard due to the new concurrency model.
+		files <- RawFileInfo{invalid: true}
 	}
 }
 
@@ -115,7 +120,10 @@ func parseFiles(fileList []string, series string) []RawFileInfo {
 	}
 
 	for range fileList {
-		temp = append(temp, <-files)
+		result := <-files
+		if !result.invalid {
+			temp = append(temp, result)
+		}
 	}
 
 	return temp
@@ -135,7 +143,11 @@ func parseFilesInOrder(fileList []string, series string) []RawFileInfo {
 	}
 
 	for _, v := range fileChans {
-		temp = append(temp, <-v)
+		result := <-v
+		if !result.invalid {
+			temp = append(temp, result)
+		}
+
 	}
 
 	return temp
@@ -171,9 +183,15 @@ func GetFiles(directory string) []string {
 
 // RenameFiles renames the list of files given.
 func RenameFiles(renameList []FileRename) {
+	var wg sync.WaitGroup
 	for _, file := range renameList {
-		file.RenameFile()
+		wg.Add(1)
+		go func(wg *sync.WaitGroup, file FileRename) {
+			defer wg.Done()
+			file.RenameFile()
+		}(&wg, file)
 	}
+	wg.Wait()
 }
 
 // RetrieveEpisodeInfo retrieves the information for a episode.
