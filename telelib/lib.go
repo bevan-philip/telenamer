@@ -40,8 +40,8 @@ type ParsedFileInfo struct {
 
 // FileRename keeps both the old filename and the new filename.
 type FileRename struct {
-	OldFileName string
-	NewFileName string
+	OldFileName string `json:"oldfilename"`
+	NewFileName string `json:"newfilename"`
 }
 
 // TVDBLogin replicates https://github.com/pioz/tvdb/blob/master/client.go's Client struct, with some additional JSON support.
@@ -229,9 +229,8 @@ func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) ParsedFileInfo {
 
 // NewFileName returns a file name.
 func (p ParsedFileInfo) NewFileName(customFormat string) string {
-	// Due to optional format strings $0e and $0z, I'm going to keep this simple text replacement vs a smarter templating
+	// Due to optional format strings {0e} and {0z}, I'm going to keep this simple text replacement vs a smarter templating
 	// system for now...
-
 	customFormat = strings.ReplaceAll(customFormat, "{s}", p.Series)
 	customFormat = strings.ReplaceAll(customFormat, "{n}", p.EpisodeName)
 	customFormat = strings.ReplaceAll(customFormat, "{e}", strconv.Itoa(p.Episode))
@@ -239,19 +238,19 @@ func (p ParsedFileInfo) NewFileName(customFormat string) string {
 	customFormat = strings.ReplaceAll(customFormat, "{z}", strconv.Itoa(p.Season))
 	customFormat = strings.ReplaceAll(customFormat, "{0z}", fmt.Sprintf("%02d", p.Season))
 
-	return fmt.Sprintf("%s.%s", customFormat, p.Container)
-}
-
-// RenameFile renames the file based on the contents of the struct.
-func (file FileRename) RenameFile() {
 	// Removes characters that aren't accepted in Windows file names.
 	winInvalidName, err := regexp.Compile(`(\?|\\|\/|\*|\:|"|<|>|\|)`)
 	if err != nil {
 		log.Fatal(err)
 	}
+	customFormat = winInvalidName.ReplaceAllString(customFormat, "")
 
-	file.NewFileName = winInvalidName.ReplaceAllString(file.NewFileName, "")
-	err = fs.Rename(file.OldFileName, file.NewFileName)
+	return fmt.Sprintf("%s.%s", customFormat, p.Container)
+}
+
+// RenameFile renames the file based on the contents of the struct.
+func (file FileRename) RenameFile() {
+	err := fs.Rename(file.OldFileName, file.NewFileName)
 
 	if err != nil {
 		log.Fatal("Error in renaming files. ", err)

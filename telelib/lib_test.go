@@ -137,33 +137,38 @@ func TestNewFileName(t *testing.T) {
 	}{
 		{
 			ParsedFileInfo{FileName: "", Container: "mkv", Series: "The Good Place", Season: 5, Episode: 1, EpisodeName: "Backstreet's Back"},
-			"$s - $zx$e - $n",
+			"{s} - {z}x{e} - {n}",
 			"The Good Place - 5x1 - Backstreet's Back.mkv",
 		},
 		{
 			ParsedFileInfo{FileName: "", Container: "mp4", Series: "The Good Place", Season: 5, Episode: 1, EpisodeName: "Backstreet's Back"},
-			"$s - $0zx$0e - $n",
+			"{s} - {0z}x{0e} - {n}",
 			"The Good Place - 05x01 - Backstreet's Back.mp4",
 		},
 		{
 			ParsedFileInfo{FileName: "", Container: "mkv", Series: "The Good Place", Season: 5, Episode: 1, EpisodeName: "Backstreet's Back"},
-			"$zx$e - $n",
+			"{z}x{e} - {n}",
 			"5x1 - Backstreet's Back.mkv",
 		},
 		{
 			ParsedFileInfo{FileName: "", Container: "mp4", Series: "The Good Place", Season: 5, Episode: 1, EpisodeName: "Backstreet's Back"},
-			"$0zx$0e - $n",
+			"{0z}x{0e} - {n}",
 			"05x01 - Backstreet's Back.mp4",
 		},
 		{
 			ParsedFileInfo{FileName: "", Container: "mkv", Series: "The Good Place", Season: 5, Episode: 1, EpisodeName: "Backstreet's Back"},
-			"$s - S$zE$e - $n",
+			"{s} - S{z}E{e} - {n}",
 			"The Good Place - S5E1 - Backstreet's Back.mkv",
 		},
 		{
 			ParsedFileInfo{FileName: "", Container: "mp4", Series: "The Good Place", Season: 5, Episode: 1, EpisodeName: "Backstreet's Back"},
-			"$s - S$0zE$0e - $n",
+			"{s} - S{0z}E{0e} - {n}",
 			"The Good Place - S05E01 - Backstreet's Back.mp4",
+		},
+		{
+			ParsedFileInfo{FileName: "", Container: "srt", Series: "The Good Place", Season: 5, Episode: 1, EpisodeName: "Backstreet's Back?"},
+			"{s} - S{0z}E{0e} - {n}",
+			"The Good Place - S05E01 - Backstreet's Back.srt",
 		},
 	}
 
@@ -210,7 +215,7 @@ func TestRenameFile(t *testing.T) {
 			"new.mp4",
 		},
 		{
-			FileRename{OldFileName: "test2.mp4", NewFileName: "new?2.mp4"},
+			FileRename{OldFileName: "test2.mp4", NewFileName: "new2.mp4"},
 			"new2.mp4",
 		},
 	}
