@@ -231,12 +231,13 @@ func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) ParsedFileInfo {
 func (p ParsedFileInfo) NewFileName(customFormat string) string {
 	// Due to optional format strings $0e and $0z, I'm going to keep this simple text replacement vs a smarter templating
 	// system for now...
-	customFormat = strings.ReplaceAll(customFormat, "$s", p.Series)
-	customFormat = strings.ReplaceAll(customFormat, "$n", p.EpisodeName)
-	customFormat = strings.ReplaceAll(customFormat, "$e", strconv.Itoa(p.Episode))
-	customFormat = strings.ReplaceAll(customFormat, "$0e", fmt.Sprintf("%02d", p.Episode))
-	customFormat = strings.ReplaceAll(customFormat, "$z", strconv.Itoa(p.Season))
-	customFormat = strings.ReplaceAll(customFormat, "$0z", fmt.Sprintf("%02d", p.Season))
+
+	customFormat = strings.ReplaceAll(customFormat, "{s}", p.Series)
+	customFormat = strings.ReplaceAll(customFormat, "{n}", p.EpisodeName)
+	customFormat = strings.ReplaceAll(customFormat, "{e}", strconv.Itoa(p.Episode))
+	customFormat = strings.ReplaceAll(customFormat, "{0e}", fmt.Sprintf("%02d", p.Episode))
+	customFormat = strings.ReplaceAll(customFormat, "{z}", strconv.Itoa(p.Season))
+	customFormat = strings.ReplaceAll(customFormat, "{0z}", fmt.Sprintf("%02d", p.Season))
 
 	return fmt.Sprintf("%s.%s", customFormat, p.Container)
 }

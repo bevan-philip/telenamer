@@ -8,16 +8,27 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"time"
 
+	"github.com/akamensky/argparse"
 	"github.com/arrivance/telenamer/telelib"
 )
 
 func main() {
-	confirm := false
-	format := "$s - S$0zE$0e - $n"
+	// Create new parser object
+	parser := argparse.NewParser("telenamer", "Renames episodes within the folder.")
 
-	start := time.Now()
+	format := parser.String("f", "format", &argparse.Options{Required: true, Help: "Format of renamed file: {s} = series, {n} = episode name, {e}/{0e} = episode number, {z}/{0z} = series number | 0e/z 0-prefixes numbers less than 10."})
+	series := parser.String("s", "series", &argparse.Options{Required: false, Help: "Name of series (if not provided, retrieved from file name.)"})
+	confirm := parser.Flag("c", "confirm", &argparse.Options{Required: false, Help: "Manually confirm all name changes"})
+
+	// Parse input
+	err := parser.Parse(os.Args)
+	if err != nil {
+		// In case of error print error and print usage
+		// This can also be done by passing -h or --help flags
+		log.Fatal(parser.Usage(err))
+	}
+
 	// Find the directory the executable is within.
 	ex, err := os.Executable()
 	if err != nil {
@@ -37,13 +48,18 @@ func main() {
 	json.Unmarshal(byteValue, &login)
 
 	files := telelib.GetFiles(".")
-	rawFileInfo := telelib.ParseFilesWithSeries(files, "South Park")
+	var rawFileInfo []telelib.RawFileInfo
+	if *series == "" {
+		rawFileInfo = telelib.ParseFiles(files)
+	} else {
+		rawFileInfo = telelib.ParseFilesWithSeries(files, *series)
+	}
 
-	if confirm == false {
+	if *confirm == false {
 		var wg sync.WaitGroup
 		for _, v := range rawFileInfo {
 			wg.Add(1)
-			go rename(v, login, &wg, format)
+			go rename(v, login, &wg, *format)
 		}
 
 		wg.Wait()
@@ -68,21 +84,18 @@ func main() {
 		for _, v := range fileList {
 			var input string
 			fmt.Println("Old: " + v.FileName)
-			fmt.Println("New: " + v.NewFileName(format))
+			fmt.Println("New: " + v.NewFileName(*format))
 			fmt.Print("Are you sure? y/n | ")
 			fmt.Scanln(&input)
 
 			if input == "y" {
-				telelib.FileRename{OldFileName: v.FileName, NewFileName: v.NewFileName(format)}.RenameFile()
+				telelib.FileRename{OldFileName: v.FileName, NewFileName: v.NewFileName(*format)}.RenameFile()
 			}
 
 			fmt.Println("------------")
 		}
 
 	}
-
-	elapsed := time.Since(start)
-	log.Printf("Program took took %s", elapsed)
 }
 
 func rename(v telelib.RawFileInfo, login telelib.TVDBLogin, wg *sync.WaitGroup, format string) {
