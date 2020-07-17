@@ -26,6 +26,7 @@ type RawFileInfo struct {
 	Episode   int
 	Series    string
 	invalid   bool
+	err       error
 }
 
 // ParsedFileInfo is the info about the file retrieved from an API provider.
@@ -74,20 +75,21 @@ func parseFile(fileName string, series string, files chan RawFileInfo) {
 	// e.g. "Test - EG", the Title would be "Test - ", instead of "Test".
 	dividerRe, err := regexp.Compile(` ?(-|\||:|\[|\]) ?`)
 	if err != nil {
-		log.Fatal(err)
+		files <- RawFileInfo{invalid: true, err: fmt.Errorf("error creating divider remover regex %v", err)}
 	}
 
 	cleanFileName := dividerRe.ReplaceAllString(fileName, " ")
 
 	parsed, err := parsetorrentname.Parse(cleanFileName)
 	if err != nil {
-		log.Fatal(err)
+		files <- RawFileInfo{invalid: true, err: fmt.Errorf("parsetorrentname.Parse(%v): %v", cleanFileName, err)}
+
 	}
 
 	// Checks if file is a subtitle. Not included in base parser.
 	subtitleRe, err := regexp.Compile(`(\.srt|\.txt|\.vtt\.scc\.stl)`)
 	if err != nil {
-		log.Fatal(err)
+		files <- RawFileInfo{invalid: true, err: fmt.Errorf("error creating subtitle finder regex %v", err)}
 	}
 
 	subtitle := subtitleRe.FindString(fileName)
@@ -98,11 +100,11 @@ func parseFile(fileName string, series string, files chan RawFileInfo) {
 
 	// Remove anything that isn't a video file.
 	if parsed.Container != "" {
-		files <- RawFileInfo{fileName, parsed.Container, parsed.Season, parsed.Episode, series, false}
+		files <- RawFileInfo{FileName: fileName, Container: parsed.Container, Season: parsed.Season, Episode: parsed.Episode, Series: series}
 	} else if subtitle != "" {
 		// Note: while Golang does interpret strings as UTF8, and thus, if we were dealing with unknown strings, subtitle[1:]
 		// would be error prone, we both know the string exists, and starts with ".", therefore, there is no risk.
-		files <- RawFileInfo{fileName, subtitle[1:], parsed.Season, parsed.Episode, series, false}
+		files <- RawFileInfo{FileName: fileName, Container: subtitle[1:], Season: parsed.Season, Episode: parsed.Episode, Series: series}
 	} else {
 		// Can't just silently discard due to the new concurrency model.
 		files <- RawFileInfo{invalid: true}
@@ -121,6 +123,7 @@ func parseFiles(fileList []string, series string) []RawFileInfo {
 
 	for range fileList {
 		result := <-files
+		// Ignore any errors.
 		if !result.invalid {
 			temp = append(temp, result)
 		}
@@ -165,10 +168,10 @@ func ParseFiles(fileList []string) []RawFileInfo {
 }
 
 // GetFiles retrieves a list of files from the current directory.
-func GetFiles(directory string) []string {
+func GetFiles(directory string) ([]string, error) {
 	files, err := afero.ReadDir(fs, ".")
 	if err != nil {
-		log.Fatal(err)
+		return nil, fmt.Errorf("error reading dir in getfiles %v", err)
 	}
 	var fileList []string
 
@@ -178,7 +181,7 @@ func GetFiles(directory string) []string {
 		}
 	}
 
-	return fileList
+	return fileList, nil
 }
 
 // RenameFiles renames the list of files given.
@@ -195,36 +198,36 @@ func RenameFiles(renameList []FileRename) {
 }
 
 // RetrieveEpisodeInfo retrieves the information for a episode.
-func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) ParsedFileInfo {
+func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) (ParsedFileInfo, error) {
 	c := tvdb.Client{Apikey: login.Apikey, Userkey: login.Userkey, Username: login.Username}
 	newFileInfo := ParsedFileInfo{FileName: fileInfo.FileName, Season: fileInfo.Season, Container: fileInfo.Container}
 
 	err := c.Login()
 	if err != nil {
-		log.Fatal("Error in logging in.")
+		return ParsedFileInfo{}, fmt.Errorf("error logging in %v", err)
 	}
 
 	series, err := c.BestSearch(fileInfo.Series)
 	if err != nil {
-		log.Fatal("Error searching for series.")
+		return ParsedFileInfo{}, fmt.Errorf("error searching for series %v", err)
 	}
 	// Retrieving this info from the API ensures capitalisation is correct.
 	newFileInfo.Series = series.SeriesName
 
 	err = c.GetSeriesEpisodes(&series, nil)
 	if err != nil {
-		log.Fatal("Error in searching for episode.")
+		return ParsedFileInfo{}, fmt.Errorf("error searching for episode %v", err)
 	}
 	episode := series.GetEpisode(fileInfo.Season, fileInfo.Episode)
 
 	if episode == nil {
-		log.Fatal("Unable to find episode.")
+		return ParsedFileInfo{}, fmt.Errorf("unable to find episode %v", err)
 	}
 
 	newFileInfo.EpisodeName = episode.EpisodeName
 	newFileInfo.Episode = episode.AiredEpisodeNumber
 
-	return newFileInfo
+	return newFileInfo, nil
 }
 
 // NewFileName returns a file name.
@@ -241,6 +244,7 @@ func (p ParsedFileInfo) NewFileName(customFormat string) string {
 	// Removes characters that aren't accepted in Windows file names.
 	winInvalidName, err := regexp.Compile(`(\?|\\|\/|\*|\:|"|<|>|\|)`)
 	if err != nil {
+		// Shouldn't fail?
 		log.Fatal(err)
 	}
 	customFormat = winInvalidName.ReplaceAllString(customFormat, "")
@@ -249,10 +253,12 @@ func (p ParsedFileInfo) NewFileName(customFormat string) string {
 }
 
 // RenameFile renames the file based on the contents of the struct.
-func (file FileRename) RenameFile() {
+func (file FileRename) RenameFile() error {
 	err := fs.Rename(file.OldFileName, file.NewFileName)
 
 	if err != nil {
-		log.Fatal("Error in renaming files. ", err)
+		return fmt.Errorf("error renaming %v", err)
 	}
+
+	return nil
 }

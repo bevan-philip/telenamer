@@ -195,7 +195,11 @@ func TestGetFiles(t *testing.T) {
 		afero.NewMemMapFs().Mkdir(v, 0644)
 	}
 
-	result := GetFiles(".")
+	result, err := GetFiles(".")
+
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	if !cmp.Equal(result, expected) {
 		t.Errorf("GetFiles(\".\") == %q, expected %q", result, expected)
@@ -260,7 +264,11 @@ func TestRetrieveEpisodeInfo(t *testing.T) {
 	}
 
 	for _, v := range cases {
-		result := RetrieveEpisodeInfo(v.in, login)
+		result, err := RetrieveEpisodeInfo(v.in, login)
+
+		if err != nil {
+			log.Fatal(err)
+		}
 		if !cmp.Equal(result, v.want) {
 			t.Errorf("RetrieveEpisodeInfo(%v)\n == %v\n, want %v\n", v.in, result, v.want)
 		}
@@ -280,7 +288,7 @@ func TestRenameFiles(t *testing.T) {
 			"new.mp4",
 		},
 		{
-			FileRename{OldFileName: "test2.mp4", NewFileName: "new?2.mp4"},
+			FileRename{OldFileName: "test2.mp4", NewFileName: "new2.mp4"},
 			"new2.mp4",
 		},
 	}
