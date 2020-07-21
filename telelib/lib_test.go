@@ -175,7 +175,7 @@ func TestNewFileName(t *testing.T) {
 	for _, v := range cases {
 		result := v.in.NewFileName(v.format)
 
-		if result != v.want {
+		if result.NewFileName != v.want {
 			t.Errorf("%q.RenameFile(%q) = %q, expected %q", v.in, v.format, result, v.want)
 		}
 	}

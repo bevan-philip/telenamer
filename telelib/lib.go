@@ -221,7 +221,7 @@ func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) (ParsedFileInfo,
 	episode := series.GetEpisode(fileInfo.Season, fileInfo.Episode)
 
 	if episode == nil {
-		return ParsedFileInfo{}, fmt.Errorf("unable to find episode %v", err)
+		return ParsedFileInfo{}, fmt.Errorf("unable to find episode %v | %v", fileInfo.Episode, err)
 	}
 
 	newFileInfo.EpisodeName = episode.EpisodeName
@@ -231,7 +231,7 @@ func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) (ParsedFileInfo,
 }
 
 // NewFileName returns a file name.
-func (p ParsedFileInfo) NewFileName(customFormat string) string {
+func (p ParsedFileInfo) NewFileName(customFormat string) FileRename {
 	// Due to optional format strings {0e} and {0z}, I'm going to keep this simple text replacement vs a smarter templating
 	// system for now...
 	customFormat = strings.ReplaceAll(customFormat, "{s}", p.Series)
@@ -249,7 +249,7 @@ func (p ParsedFileInfo) NewFileName(customFormat string) string {
 	}
 	customFormat = winInvalidName.ReplaceAllString(customFormat, "")
 
-	return fmt.Sprintf("%s.%s", customFormat, p.Container)
+	return FileRename{OldFileName: p.FileName, NewFileName: fmt.Sprintf("%s.%s", customFormat, p.Container)}
 }
 
 // RenameFile renames the file based on the contents of the struct.
