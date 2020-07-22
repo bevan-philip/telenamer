@@ -37,7 +37,7 @@ jobs:
       run: |
         cd telelib
         go test -v .
-      env: |
+      env: 
         apikey: ${{ secrets.apikey }}
         userkey: ${{ secrets.userkey }}
         username: ${{ secrets.username }}
