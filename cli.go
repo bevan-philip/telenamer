@@ -20,7 +20,7 @@ type fileRenameErr struct {
 }
 
 func main() {
-	// Create new parser object
+	// Create new parser object, and arguments for CLI usage.
 	parser := argparse.NewParser("telenamer", "Renames episodes within the folder.")
 
 	format := parser.String(
@@ -47,6 +47,7 @@ func main() {
 		log.Fatal(parser.Usage(err))
 	}
 
+	// If silent, we just discard all output.
 	if *silent {
 		log.SetOutput(ioutil.Discard)
 	}
@@ -67,7 +68,7 @@ func main() {
 	// Opens the login file.
 	loginFile, err := os.Open(exPath + "\\login.json")
 	if err != nil {
-		log.Fatal("Could not load login.json: ", err)
+		log.Fatal("Could not load login.json, have you made it?: ", err)
 	}
 
 	defer loginFile.Close()
@@ -134,6 +135,8 @@ func main() {
 		// Allowing the user to have control over the filename changes significantly slows down the operation,
 		// so we'll go for a UX-best approach rather than prioritising performance.
 		// The non-confirm section of the loop can deal with maximum performance.
+
+		// Store a list of channels.
 		var parsedChans []chan telelib.ParsedFileInfo
 		for _, v := range rawFileInfo {
 			parsedChan := make(chan telelib.ParsedFileInfo)
@@ -146,42 +149,38 @@ func main() {
 				if err != nil {
 					log.Print(fmt.Sprintf("Error retrieving episode info for file %v, inferred info series %v, season %v, episode %v", v.FileName, v.Series, v.Season, v.Episode))
 				}
+
 				parsedChan <- result
 			}(v, login, parsedChan)
 		}
 
-		var fileList []telelib.ParsedFileInfo
+		var renames []telelib.FileRename
+
 		for _, v := range parsedChans {
 			result := <-v
 			// A blank struct is returned if there is an error, so we can just discard anything with a blank struct.
 			if (result != telelib.ParsedFileInfo{}) {
-				fileList = append(fileList, result)
-			}
-		}
+				fileRename := result.NewFileName(*format)
+				var input string
 
-		var renames []telelib.FileRename
+				// Presents file rename for user to confirm.
+				// Both isn't a log, and has to be displayed even if silent.
+				fmt.Println("Old: " + fileRename.OldFileName)
+				fmt.Println("New: " + fileRename.NewFileName)
+				fmt.Print("Are you sure? y/n | ")
+				fmt.Scanln(&input)
 
-		for _, v := range fileList {
-			fileRename := v.NewFileName(*format)
-			var input string
-
-			// Presents file rename for user to confirm.
-			// Both isn't a log, and has to be displayed even if silent.
-			fmt.Println("Old: " + fileRename.OldFileName)
-			fmt.Println("New: " + fileRename.NewFileName)
-			fmt.Print("Are you sure? y/n | ")
-			fmt.Scanln(&input)
-
-			// If they input a y, we'll rename the file and add it to the list of performed renames.
-			if input == "y" {
-				err := fileRename.RenameFile()
-				if err != nil {
-					log.Print("error renaming file | full error: ", err)
-				} else {
-					renames = append(renames, fileRename)
+				// If they input a y, we'll rename the file and add it to the list of performed renames.
+				if input == "y" {
+					err := fileRename.RenameFile()
+					if err != nil {
+						log.Print("error renaming file | full error: ", err)
+					} else {
+						renames = append(renames, fileRename)
+					}
 				}
+				fmt.Println("------------")
 			}
-			fmt.Println("------------")
 		}
 
 		writeRenames(renames)
