@@ -12,6 +12,8 @@ import (
 	"github.com/arrivance/telenamer/telelib"
 )
 
+// FileRenames are error prone operations, and we're performing it in a GoRoutine, so we
+// ensure we have a way of reporting errors.
 type fileRenameErr struct {
 	FileRename telelib.FileRename
 	Error      error
@@ -21,7 +23,17 @@ func main() {
 	// Create new parser object
 	parser := argparse.NewParser("telenamer", "Renames episodes within the folder.")
 
-	format := parser.String("f", "format", &argparse.Options{Required: false, Help: "Format of renamed file: {s} = series, {n} = episode name, {e}/{0e} = episode number, {z}/{0z} = series number | 0e/z 0-prefixes numbers less than 10. Required unless -u provided."})
+	format := parser.String(
+		"f",
+		"format",
+		&argparse.Options{Required: false,
+			Help: `Format of renamed file:
+			{s} = series
+			{n} = episode name 
+			{e}/{0e} = episode number. {0e} prepends a 0 if the episode number is less than 10 
+			{z}/{0z} = series number {0z} prepends a 0 if the series number is less than 10`,
+			Default: "{s} - S{0z}E{0e} - {n}",
+		})
 	series := parser.String("s", "series", &argparse.Options{Required: false, Help: "Name of series (if not provided, retrieved from file name.)"})
 	confirm := parser.Flag("c", "confirm", &argparse.Options{Required: false, Help: "Manually confirm all name changes"})
 	silent := parser.Flag("z", "silent", &argparse.Options{Required: false, Help: "Silent mode (does not work with -c)"})
@@ -41,10 +53,8 @@ func main() {
 
 	if *undo {
 		undoRenames()
+		// Having multiple operations with undo just seems, excessive.
 		os.Exit(1)
-	} else if *format == "" {
-		log.Println("No format provided.")
-		log.Fatal(parser.Usage(err))
 	}
 
 	// Find the directory the executable is within.
@@ -86,25 +96,25 @@ func main() {
 		renameChan := make(chan fileRenameErr, len(rawFileInfo))
 
 		for _, v := range rawFileInfo {
-			go func(v telelib.RawFileInfo, login telelib.TVDBLogin, format string, rawChan chan fileRenameErr) {
+			// Create a GoRoutine that retrieves the episode for each info, and performs a rename operation.
+			go func(v telelib.RawFileInfo, login telelib.TVDBLogin, format string, renameChan chan fileRenameErr) {
 				epInfo, err := telelib.RetrieveEpisodeInfo(v, login)
 
 				if err != nil {
 					log.Print("error in retrieving episode info | full error: ", err)
-					rawChan <- fileRenameErr{Error: err}
+					renameChan <- fileRenameErr{Error: err}
 				} else {
 					fileRename := epInfo.NewFileName(format)
 					err := fileRename.RenameFile()
 
 					if err != nil {
 						log.Print("error in renaming file | full error: ", err)
-						rawChan <- fileRenameErr{Error: err}
+						renameChan <- fileRenameErr{Error: err}
 					} else {
 						log.Print(fmt.Sprintf("Renamed %q to %q", fileRename.OldFileName, fileRename.NewFileName))
-						rawChan <- fileRenameErr{FileRename: fileRename}
+						renameChan <- fileRenameErr{FileRename: fileRename}
 					}
 				}
-
 			}(v, login, *format, renameChan)
 		}
 
@@ -127,8 +137,10 @@ func main() {
 		var parsedChans []chan telelib.ParsedFileInfo
 		for _, v := range rawFileInfo {
 			parsedChan := make(chan telelib.ParsedFileInfo)
+			// Adds each individual channel to a list, so that we can retrieve the results in-order later.
 			parsedChans = append(parsedChans, parsedChan)
 			go func(v telelib.RawFileInfo, login telelib.TVDBLogin, parsedChan chan telelib.ParsedFileInfo) {
+				// Retireves the episode info.
 				result, err := telelib.RetrieveEpisodeInfo(v, login)
 
 				if err != nil {
@@ -152,11 +164,15 @@ func main() {
 		for _, v := range fileList {
 			fileRename := v.NewFileName(*format)
 			var input string
+
+			// Presents file rename for user to confirm.
+			// Both isn't a log, and has to be displayed even if silent.
 			fmt.Println("Old: " + fileRename.OldFileName)
 			fmt.Println("New: " + fileRename.NewFileName)
 			fmt.Print("Are you sure? y/n | ")
 			fmt.Scanln(&input)
 
+			// If they input a y, we'll rename the file and add it to the list of performed renames.
 			if input == "y" {
 				err := fileRename.RenameFile()
 				if err != nil {

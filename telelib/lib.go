@@ -2,8 +2,6 @@ package telelib
 
 import (
 	"fmt"
-	"log"
-	"net/http"
 	"regexp"
 	"strconv"
 	"strings"
@@ -40,6 +38,7 @@ type ParsedFileInfo struct {
 }
 
 // FileRename keeps both the old filename and the new filename.
+// Allows us to store this info easily.
 type FileRename struct {
 	OldFileName string `json:"oldfilename"`
 	NewFileName string `json:"newfilename"`
@@ -53,9 +52,7 @@ type TVDBLogin struct {
 	Username string `json:"username"`
 	// The language with which you want to obtain the data (if not set english is
 	// used)
-	Language string
-	token    string
-	client   http.Client
+	Language string `json:"language"`
 }
 
 var (
@@ -73,24 +70,19 @@ func parseFile(fileName string, series string, files chan RawFileInfo) {
 	// ptn sometimes fails with well defined file names, that have seperators - this aims to find such
 	// seperators and strip them from the filename and title..
 	// e.g. "Test - EG", the Title would be "Test - ", instead of "Test".
-	dividerRe, err := regexp.Compile(` ?(-|\||:|\[|\]) ?`)
-	if err != nil {
-		files <- RawFileInfo{invalid: true, err: fmt.Errorf("error creating divider remover regex %v", err)}
-	}
+	dividerRe, _ := regexp.Compile(` ?(-|\||:|\[|\]) ?`)
 
 	cleanFileName := dividerRe.ReplaceAllString(fileName, " ")
 
 	parsed, err := parsetorrentname.Parse(cleanFileName)
 	if err != nil {
+		// Don't control this, so could potentially fail.
+		// Might be that a file does not have enough information to pull from this.
 		files <- RawFileInfo{invalid: true, err: fmt.Errorf("parsetorrentname.Parse(%v): %v", cleanFileName, err)}
-
 	}
 
 	// Checks if file is a subtitle. Not included in base parser.
-	subtitleRe, err := regexp.Compile(`(\.srt|\.txt|\.vtt\.scc\.stl)`)
-	if err != nil {
-		files <- RawFileInfo{invalid: true, err: fmt.Errorf("error creating subtitle finder regex %v", err)}
-	}
+	subtitleRe, _ := regexp.Compile(`(\.srt|\.txt|\.vtt\.scc\.stl)`)
 
 	subtitle := subtitleRe.FindString(fileName)
 
@@ -123,7 +115,7 @@ func parseFiles(fileList []string, series string) []RawFileInfo {
 
 	for range fileList {
 		result := <-files
-		// Ignore any errors.
+		// Ignore any errors. Assuming rejected files are just not supposed to be looked at.
 		if !result.invalid {
 			temp = append(temp, result)
 		}
@@ -150,7 +142,6 @@ func parseFilesInOrder(fileList []string, series string) []RawFileInfo {
 		if !result.invalid {
 			temp = append(temp, result)
 		}
-
 	}
 
 	return temp
@@ -199,7 +190,7 @@ func RenameFiles(renameList []FileRename) {
 
 // RetrieveEpisodeInfo retrieves the information for a episode.
 func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) (ParsedFileInfo, error) {
-	c := tvdb.Client{Apikey: login.Apikey, Userkey: login.Userkey, Username: login.Username}
+	c := tvdb.Client{Apikey: login.Apikey, Userkey: login.Userkey, Username: login.Username, Language: login.Language}
 	newFileInfo := ParsedFileInfo{FileName: fileInfo.FileName, Season: fileInfo.Season, Container: fileInfo.Container}
 
 	err := c.Login()
@@ -242,11 +233,7 @@ func (p ParsedFileInfo) NewFileName(customFormat string) FileRename {
 	customFormat = strings.ReplaceAll(customFormat, "{0z}", fmt.Sprintf("%02d", p.Season))
 
 	// Removes characters that aren't accepted in Windows file names.
-	winInvalidName, err := regexp.Compile(`(\?|\\|\/|\*|\:|"|<|>|\|)`)
-	if err != nil {
-		// Shouldn't fail?
-		log.Fatal(err)
-	}
+	winInvalidName, _ := regexp.Compile(`(\?|\\|\/|\*|\:|"|<|>|\|)`)
 	customFormat = winInvalidName.ReplaceAllString(customFormat, "")
 
 	return FileRename{OldFileName: p.FileName, NewFileName: fmt.Sprintf("%s.%s", customFormat, p.Container)}
