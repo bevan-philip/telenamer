@@ -34,4 +34,6 @@ jobs:
       run: go build -v .
 
     - name: Test
-      run: go test -v .
+      run: |
+        cd telelib
+        go test -v .
