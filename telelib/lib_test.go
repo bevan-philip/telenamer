@@ -1,8 +1,6 @@
 package telelib
 
 import (
-	"encoding/json"
-	"io/ioutil"
 	"log"
 	"os"
 	"testing"
@@ -238,17 +236,7 @@ func TestRenameFile(t *testing.T) {
 }
 
 func TestRetrieveEpisodeInfo(t *testing.T) {
-	loginFile, err := os.Open("login.json")
-	if err != nil {
-		log.Fatal("Could not load login.json: ", err)
-	}
-
-	defer loginFile.Close()
-
-	var login TVDBLogin
-	byteValue, _ := ioutil.ReadAll(loginFile)
-	json.Unmarshal(byteValue, &login)
-
+	login := TVDBLogin{Apikey: os.Getenv("apikey"), Userkey: os.Getenv("userkey"), Username: os.Getenv("username")}
 	cases := []struct {
 		in   RawFileInfo
 		want ParsedFileInfo
