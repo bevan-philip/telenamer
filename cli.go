@@ -71,6 +71,11 @@ func main() {
 	// Converts the login file into a struct.
 	var login telelib.TVDBLogin
 
+	// Priority order for pulling login info:
+	// 1) Command line
+	// 2) Environment variables
+	// 3) Direct path to file provided in command line
+	// 4) login.json in same directory as executable.
 	if *username != "" && *userkey != "" && *apikey != "" {
 		login = telelib.TVDBLogin{
 			Username: *username,
@@ -152,7 +157,11 @@ func undoRenames() {
 	defer renamesFile.Close()
 
 	var renames []telelib.FileRename
-	byteValue, _ := ioutil.ReadAll(renamesFile)
+	byteValue, err := ioutil.ReadAll(renamesFile)
+
+	if err != nil {
+		log.Fatal("Unable to load telenamers_renames.json: ", err)
+	}
 	json.Unmarshal(byteValue, &renames)
 
 	for _, v := range renames {
