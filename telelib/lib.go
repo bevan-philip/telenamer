@@ -189,7 +189,7 @@ func RenameFiles(renameList []FileRename) {
 }
 
 // RetrieveEpisodeInfo retrieves the information for a episode.
-func RetrieveEpisodeInfo(fileInfo RawFileInfo, login TVDBLogin) (ParsedFileInfo, error) {
+func (fileInfo RawFileInfo) RetrieveEpisodeInfo(login TVDBLogin) (ParsedFileInfo, error) {
 	c := tvdb.Client{Apikey: login.Apikey, Userkey: login.Userkey, Username: login.Username, Language: login.Language}
 	newFileInfo := ParsedFileInfo{FileName: fileInfo.FileName, Season: fileInfo.Season, Container: fileInfo.Container}
 

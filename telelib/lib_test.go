@@ -252,7 +252,7 @@ func TestRetrieveEpisodeInfo(t *testing.T) {
 	}
 
 	for _, v := range cases {
-		result, err := RetrieveEpisodeInfo(v.in, login)
+		result, err := v.in.RetrieveEpisodeInfo(login)
 
 		if err != nil {
 			log.Fatal(err)

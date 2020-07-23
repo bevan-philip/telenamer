@@ -20,6 +20,10 @@ type fileRenameErr struct {
 }
 
 func main() {
+	/**
+		Preps the environment for the CLI to function as intended.
+	**/
+
 	// Create new parser object, and arguments for CLI usage.
 	parser := argparse.NewParser("telenamer", "Renames episodes within the folder.")
 
@@ -38,9 +42,13 @@ func main() {
 	series := parser.String("s", "series", &argparse.Options{Required: false, Help: "Name of series (if not provided, retrieved from file name.)"})
 	confirm := parser.Flag("c", "confirm", &argparse.Options{Required: false, Help: "Manually confirm all name changes"})
 	silent := parser.Flag("z", "silent", &argparse.Options{Required: false, Help: "Silent mode (does not work with -c)"})
+	username := parser.String("n", "username", &argparse.Options{Required: false, Help: "TVDB Username"})
+	apikey := parser.String("a", "apikey", &argparse.Options{Required: false, Help: "TVDB Apikey"})
+	userkey := parser.String("k", "userkey", &argparse.Options{Required: false, Help: "TVDB Userkey"})
+	loginLoc := parser.String("l", "loginfile", &argparse.Options{Required: false, Help: "JSON Loginfile"})
 	undo := parser.Flag("u", "undo", &argparse.Options{Required: false, Help: "Undos previous filenames (assuming you are in the same directory), and exits."})
 
-	// Parse input
+	// Parse the arguments.
 	err := parser.Parse(os.Args)
 	if err != nil {
 		// In case of error print error and print usage
@@ -57,28 +65,50 @@ func main() {
 	if *undo {
 		undoRenames()
 		// Having multiple operations with undo just seems, excessive.
-		os.Exit(1)
+		os.Exit(0)
 	}
-
-	// Find the directory the executable is within.
-	ex, err := os.Executable()
-	if err != nil {
-		log.Fatal("Error finding directory of process: ", err)
-	}
-	exPath := filepath.Dir(ex)
-
-	// Opens the login file.
-	loginFile, err := os.Open(exPath + "\\login.json")
-	if err != nil {
-		log.Fatal("Could not load login.json, have you made it?: ", err)
-	}
-
-	defer loginFile.Close()
 
 	// Converts the login file into a struct.
 	var login telelib.TVDBLogin
-	byteValue, _ := ioutil.ReadAll(loginFile)
-	json.Unmarshal(byteValue, &login)
+
+	if *username != "" && *userkey != "" && *apikey != "" {
+		login = telelib.TVDBLogin{
+			Username: *username,
+			Userkey:  *userkey,
+			Apikey:   *apikey,
+		}
+	} else if os.Getenv("tvdb_username") != "" && os.Getenv("tvdb_userkey") != "" && os.Getenv("tvdb_apikey") != "" {
+		login = telelib.TVDBLogin{
+			Username: os.Getenv("tvdb_username"),
+			Userkey:  os.Getenv("tvdb_userkey"),
+			Apikey:   os.Getenv("tvdb_apikey"),
+		}
+	} else {
+		var path string
+		if *loginLoc == "" {
+			// Find the directory the executable is within.
+			ex, err := os.Executable()
+			if err != nil {
+				log.Fatal("Error finding directory of process: ", err)
+			}
+			path = filepath.Dir(ex) + "\\login.json"
+		} else {
+			path = *loginLoc
+		}
+
+		// Opens the login file.
+		loginFile, err := os.Open(path)
+		if err != nil {
+			log.Fatal("Could not load login file, have you made it?: ", err)
+		}
+		defer loginFile.Close()
+
+		byteValue, err := ioutil.ReadAll(loginFile)
+		if err != nil {
+			log.Fatal("Could not read login file, is file malformed ", err)
+		}
+		json.Unmarshal(byteValue, &login)
+	}
 
 	// Retrieves the files from the directory. Fatal error if something goes wrong.
 	files, err := telelib.GetFiles(".")
@@ -139,7 +169,7 @@ func automatedRenames(rawFileInfo []telelib.RawFileInfo, login telelib.TVDBLogin
 	for _, v := range rawFileInfo {
 		// Create a GoRoutine that retrieves the episode for each info, and performs a rename operation.
 		go func(v telelib.RawFileInfo, login telelib.TVDBLogin, format string, renameChan chan fileRenameErr) {
-			epInfo, err := telelib.RetrieveEpisodeInfo(v, login)
+			epInfo, err := v.RetrieveEpisodeInfo(login)
 
 			if err != nil {
 				log.Print("error in retrieving episode info | full error: ", err)
@@ -186,7 +216,7 @@ func seqeuentialRenames(rawFileInfo []telelib.RawFileInfo, login telelib.TVDBLog
 		parsedChans = append(parsedChans, parsedChan)
 		go func(v telelib.RawFileInfo, login telelib.TVDBLogin, parsedChan chan telelib.ParsedFileInfo) {
 			// Retireves the episode info.
-			result, err := telelib.RetrieveEpisodeInfo(v, login)
+			result, err := v.RetrieveEpisodeInfo(login)
 
 			if err != nil {
 				log.Print(fmt.Sprintf("Error retrieving episode info for file %v, inferred info series %v, season %v, episode %v", v.FileName, v.Series, v.Season, v.Episode))
