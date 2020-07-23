@@ -34,19 +34,21 @@ func main() {
 			Help: `Format of renamed file:
 			{s} = series
 			{n} = episode name 
-			{e}/{0e} = episode number. {0e} prepends a 0 if the episode number is less than 10 
 			{z}/{0z} = series number {0z} prepends a 0 if the series number is less than 10
+			{e}/{0e} = episode number. {0e} prepends a 0 if the episode number is less than 10 
 			Default format: {s} - S{0z}E{0e} - {n}`,
 			Default: "{s} - S{0z}E{0e} - {n}",
 		})
 	series := parser.String("s", "series", &argparse.Options{Required: false, Help: "Name of series (if not provided, retrieved from file name.)"})
 	confirm := parser.Flag("c", "confirm", &argparse.Options{Required: false, Help: "Manually confirm all name changes"})
 	silent := parser.Flag("z", "silent", &argparse.Options{Required: false, Help: "Silent mode (does not work with -c)"})
+	undo := parser.Flag("u", "undo", &argparse.Options{Required: false, Help: "Undos previous filenames (assuming you are in the same directory), and exits."})
+
+	// Authentication parameters
 	username := parser.String("n", "username", &argparse.Options{Required: false, Help: "TVDB Username"})
 	apikey := parser.String("a", "apikey", &argparse.Options{Required: false, Help: "TVDB Apikey"})
 	userkey := parser.String("k", "userkey", &argparse.Options{Required: false, Help: "TVDB Userkey"})
 	loginLoc := parser.String("l", "loginfile", &argparse.Options{Required: false, Help: "JSON Loginfile"})
-	undo := parser.Flag("u", "undo", &argparse.Options{Required: false, Help: "Undos previous filenames (assuming you are in the same directory), and exits."})
 
 	// Parse the arguments.
 	err := parser.Parse(os.Args)
