@@ -95,98 +95,9 @@ func main() {
 	}
 
 	if *confirm == false {
-		// Store file renames, so that we can offer an undo option.
-		renameChan := make(chan fileRenameErr, len(rawFileInfo))
-
-		for _, v := range rawFileInfo {
-			// Create a GoRoutine that retrieves the episode for each info, and performs a rename operation.
-			go func(v telelib.RawFileInfo, login telelib.TVDBLogin, format string, renameChan chan fileRenameErr) {
-				epInfo, err := telelib.RetrieveEpisodeInfo(v, login)
-
-				if err != nil {
-					log.Print("error in retrieving episode info | full error: ", err)
-					renameChan <- fileRenameErr{Error: err}
-				} else {
-					fileRename := epInfo.NewFileName(format)
-					err := fileRename.RenameFile()
-
-					if err != nil {
-						log.Print("error in renaming file | full error: ", err)
-						renameChan <- fileRenameErr{Error: err}
-					} else {
-						log.Print(fmt.Sprintf("Renamed %q to %q", fileRename.OldFileName, fileRename.NewFileName))
-						renameChan <- fileRenameErr{FileRename: fileRename}
-					}
-				}
-			}(v, login, *format, renameChan)
-		}
-
-		// Ensure all the renames are performed, and add them to the renames list to write to disk.
-		var renames []telelib.FileRename
-		for range rawFileInfo {
-			result := <-renameChan
-
-			// We log any errors, so there is no need to actually use the info here.
-			if result.Error == nil {
-				renames = append(renames, result.FileRename)
-			}
-		}
-
-		writeRenames(renames)
-
+		automatedRenames(rawFileInfo, login, *format)
 	} else {
-		// Allowing the user to have control over the filename changes significantly slows down the operation,
-		// so we'll go for a UX-best approach rather than prioritising performance.
-		// The non-confirm section of the loop can deal with maximum performance.
-
-		// Store a list of channels.
-		var parsedChans []chan telelib.ParsedFileInfo
-		for _, v := range rawFileInfo {
-			parsedChan := make(chan telelib.ParsedFileInfo)
-			// Adds each individual channel to a list, so that we can retrieve the results in-order later.
-			parsedChans = append(parsedChans, parsedChan)
-			go func(v telelib.RawFileInfo, login telelib.TVDBLogin, parsedChan chan telelib.ParsedFileInfo) {
-				// Retireves the episode info.
-				result, err := telelib.RetrieveEpisodeInfo(v, login)
-
-				if err != nil {
-					log.Print(fmt.Sprintf("Error retrieving episode info for file %v, inferred info series %v, season %v, episode %v", v.FileName, v.Series, v.Season, v.Episode))
-				}
-
-				parsedChan <- result
-			}(v, login, parsedChan)
-		}
-
-		var renames []telelib.FileRename
-
-		for _, v := range parsedChans {
-			result := <-v
-			// A blank struct is returned if there is an error, so we can just discard anything with a blank struct.
-			if (result != telelib.ParsedFileInfo{}) {
-				fileRename := result.NewFileName(*format)
-				var input string
-
-				// Presents file rename for user to confirm.
-				// Both isn't a log, and has to be displayed even if silent.
-				fmt.Println("Old: " + fileRename.OldFileName)
-				fmt.Println("New: " + fileRename.NewFileName)
-				fmt.Print("Are you sure? y/n | ")
-				fmt.Scanln(&input)
-
-				// If they input a y, we'll rename the file and add it to the list of performed renames.
-				if input == "y" {
-					err := fileRename.RenameFile()
-					if err != nil {
-						log.Print("error renaming file | full error: ", err)
-					} else {
-						renames = append(renames, fileRename)
-					}
-				}
-				fmt.Println("------------")
-			}
-		}
-
-		writeRenames(renames)
+		seqeuentialRenames(rawFileInfo, login, *format)
 	}
 }
 
@@ -219,5 +130,100 @@ func undoRenames() {
 		telelib.FileRename{OldFileName: v.NewFileName, NewFileName: v.OldFileName}.RenameFile()
 		log.Print(fmt.Sprintf("Renamed %v back to %v", v.NewFileName, v.OldFileName))
 	}
+}
 
+func automatedRenames(rawFileInfo []telelib.RawFileInfo, login telelib.TVDBLogin, format string) {
+	// Store file renames, so that we can offer an undo option.
+	renameChan := make(chan fileRenameErr, len(rawFileInfo))
+
+	for _, v := range rawFileInfo {
+		// Create a GoRoutine that retrieves the episode for each info, and performs a rename operation.
+		go func(v telelib.RawFileInfo, login telelib.TVDBLogin, format string, renameChan chan fileRenameErr) {
+			epInfo, err := telelib.RetrieveEpisodeInfo(v, login)
+
+			if err != nil {
+				log.Print("error in retrieving episode info | full error: ", err)
+				renameChan <- fileRenameErr{Error: err}
+			} else {
+				fileRename := epInfo.NewFileName(format)
+				err := fileRename.RenameFile()
+
+				if err != nil {
+					log.Print("error in renaming file | full error: ", err)
+					renameChan <- fileRenameErr{Error: err}
+				} else {
+					log.Print(fmt.Sprintf("Renamed %q to %q", fileRename.OldFileName, fileRename.NewFileName))
+					renameChan <- fileRenameErr{FileRename: fileRename}
+				}
+			}
+		}(v, login, format, renameChan)
+	}
+
+	// Ensure all the renames are performed, and add them to the renames list to write to disk.
+	var renames []telelib.FileRename
+	for range rawFileInfo {
+		result := <-renameChan
+
+		// We log any errors, so there is no need to actually use the info here.
+		if result.Error == nil {
+			renames = append(renames, result.FileRename)
+		}
+	}
+
+	writeRenames(renames)
+}
+
+func seqeuentialRenames(rawFileInfo []telelib.RawFileInfo, login telelib.TVDBLogin, format string) {
+	// Allowing the user to have control over the filename changes significantly slows down the operation,
+	// so we'll go for a UX-best approach rather than prioritising performance.
+	// The non-confirm section of the loop can deal with maximum performance.
+
+	// Store a list of channels.
+	var parsedChans []chan telelib.ParsedFileInfo
+	for _, v := range rawFileInfo {
+		parsedChan := make(chan telelib.ParsedFileInfo)
+		// Adds each individual channel to a list, so that we can retrieve the results in-order later.
+		parsedChans = append(parsedChans, parsedChan)
+		go func(v telelib.RawFileInfo, login telelib.TVDBLogin, parsedChan chan telelib.ParsedFileInfo) {
+			// Retireves the episode info.
+			result, err := telelib.RetrieveEpisodeInfo(v, login)
+
+			if err != nil {
+				log.Print(fmt.Sprintf("Error retrieving episode info for file %v, inferred info series %v, season %v, episode %v", v.FileName, v.Series, v.Season, v.Episode))
+			}
+
+			parsedChan <- result
+		}(v, login, parsedChan)
+	}
+
+	var renames []telelib.FileRename
+
+	for _, v := range parsedChans {
+		result := <-v
+		// A blank struct is returned if there is an error, so we can just discard anything with a blank struct.
+		if (result != telelib.ParsedFileInfo{}) {
+			fileRename := result.NewFileName(format)
+			var input string
+
+			// Presents file rename for user to confirm.
+			// Both isn't a log, and has to be displayed even if silent.
+			fmt.Println("Old: " + fileRename.OldFileName)
+			fmt.Println("New: " + fileRename.NewFileName)
+			fmt.Print("Are you sure? y/n | ")
+			fmt.Scanln(&input)
+
+			// If they input a y, we'll rename the file and add it to the list of performed renames.
+			if input == "y" {
+				err := fileRename.RenameFile()
+				if err != nil {
+					log.Print("error renaming file | full error: ", err)
+				} else {
+					renames = append(renames, fileRename)
+				}
+			}
+			fmt.Println("------------")
+		}
+	}
+
+	writeRenames(renames)
 }
