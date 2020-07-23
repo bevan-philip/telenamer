@@ -31,7 +31,8 @@ func main() {
 			{s} = series
 			{n} = episode name 
 			{e}/{0e} = episode number. {0e} prepends a 0 if the episode number is less than 10 
-			{z}/{0z} = series number {0z} prepends a 0 if the series number is less than 10`,
+			{z}/{0z} = series number {0z} prepends a 0 if the series number is less than 10
+			Default format: {s} - S{0z}E{0e} - {n}`,
 			Default: "{s} - S{0z}E{0e} - {n}",
 		})
 	series := parser.String("s", "series", &argparse.Options{Required: false, Help: "Name of series (if not provided, retrieved from file name.)"})
@@ -47,7 +48,8 @@ func main() {
 		log.Fatal(parser.Usage(err))
 	}
 
-	// If silent, we just discard all output.
+	// If silent, we just discard all output. Might be slower than simply not outputting at all, but
+	// performance difference is neglible.
 	if *silent {
 		log.SetOutput(ioutil.Discard)
 	}
@@ -124,6 +126,7 @@ func main() {
 		for range rawFileInfo {
 			result := <-renameChan
 
+			// We log any errors, so there is no need to actually use the info here.
 			if result.Error == nil {
 				renames = append(renames, result.FileRename)
 			}
@@ -214,6 +217,7 @@ func undoRenames() {
 	for _, v := range renames {
 		// Flip it and run it through the same function again.
 		telelib.FileRename{OldFileName: v.NewFileName, NewFileName: v.OldFileName}.RenameFile()
+		log.Print(fmt.Sprintf("Renamed %v back to %v", v.NewFileName, v.OldFileName))
 	}
 
 }
