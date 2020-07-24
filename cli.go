@@ -70,13 +70,13 @@ func main() {
 		os.Exit(0)
 	}
 
-	// Converts the login file into a struct.
 	var login telelib.TVDBLogin
+	var path string
 
 	// Priority order for pulling login info:
 	// 1) Command line
-	// 2) Environment variables
-	// 3) Direct path to file provided in command line
+	// 2) Direct path to file provided in command line
+	// 3) Environment variables
 	// 4) login.json in same directory as executable.
 	if *username != "" && *userkey != "" && *apikey != "" {
 		login = telelib.TVDBLogin{
@@ -84,6 +84,8 @@ func main() {
 			Userkey:  *userkey,
 			Apikey:   *apikey,
 		}
+	} else if *loginLoc != "" {
+		path = *loginLoc
 	} else if os.Getenv("tvdb_username") != "" && os.Getenv("tvdb_userkey") != "" && os.Getenv("tvdb_apikey") != "" {
 		login = telelib.TVDBLogin{
 			Username: os.Getenv("tvdb_username"),
@@ -91,18 +93,15 @@ func main() {
 			Apikey:   os.Getenv("tvdb_apikey"),
 		}
 	} else {
-		var path string
-		if *loginLoc == "" {
-			// Find the directory the executable is within.
-			ex, err := os.Executable()
-			if err != nil {
-				log.Fatal("Error finding directory of process: ", err)
-			}
-			path = filepath.Dir(ex) + "\\login.json"
-		} else {
-			path = *loginLoc
+		// Find the directory the executable is within.
+		ex, err := os.Executable()
+		if err != nil {
+			log.Fatal("Error finding directory of process: ", err)
 		}
+		path = filepath.Dir(ex) + "\\login.json"
+	}
 
+	if path != "" {
 		// Opens the login file.
 		loginFile, err := os.Open(path)
 		if err != nil {
@@ -146,17 +145,18 @@ func writeRenames(renames []telelib.FileRename) {
 
 	// As it is a relatively small file, we'll store it within the OS' temporary store.
 	// While good practice is to remove it, the purpose of this file is (temporary) persistence.
+	// Undos are likely to be performed somewhat immediately after the operation, so it doesn't matter if the OS removes it.
 	// telenamer isn't a background task that can clean this up.
 	ioutil.WriteFile(os.TempDir()+"\\telenamer_renames.json", renamesJSON, 0644)
 }
 
 func undoRenames() {
-	renamesFile, err := os.Open(os.TempDir() + "\\telenamer_renames.json")
+	// Opens up the temporary file stored. If it doesn't exist, we fatal error.
+	tempFile := os.TempDir() + "\\telenamer_renames.json"
+	renamesFile, err := os.Open(tempFile)
 	if err != nil {
 		log.Fatal("Could not load telenamer_renames.json: ", err)
 	}
-
-	defer renamesFile.Close()
 
 	var renames []telelib.FileRename
 	byteValue, err := ioutil.ReadAll(renamesFile)
@@ -171,6 +171,10 @@ func undoRenames() {
 		telelib.FileRename{OldFileName: v.NewFileName, NewFileName: v.OldFileName}.RenameFile()
 		log.Print(fmt.Sprintf("Renamed %v back to %v", v.NewFileName, v.OldFileName))
 	}
+
+	renamesFile.Close()
+	// Once we've performed a undo, no need for the file to exist anymore.
+	os.Remove(tempFile)
 }
 
 func automatedRenames(rawFileInfo []telelib.RawFileInfo, login telelib.TVDBLogin, format string) {

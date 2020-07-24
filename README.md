@@ -13,6 +13,8 @@ go install github.com/arrivance/telenamer
 
 ## Usage
 
+### Authentication
+
 First of all, you need to get your TVDB credentials: these are your API key, User key and username:
 
 - Register an account on <http://thetvdb.com/?tab=register>
@@ -25,7 +27,9 @@ To run, navigate to the directory with the episode, and type in:
 telenamer --apikey "APIKEY" --userkey "USERKEY" --username "USERNAME"
 ```
 
-(one can alternatively create a login.json file in the directory of the executable, in the format
+(you can also set the environment variables ```tvdb_apikey```, ```tvdb_userkey``` and ```tvdb_username``` with the relevant details,
+  
+one can alternatively create a ```login.json``` file in the directory of the executable, in the format
 
 ```JSON
 {
@@ -35,11 +39,20 @@ telenamer --apikey "APIKEY" --userkey "USERKEY" --username "USERNAME"
 }
 ```
 
-or anywhere else with the full path to the file passed with the -l parameter)
+or anywhere else with the full path to the file passed with the ```-l``` parameter)
 
-with the following optional parameters
+#### Priority of authentication methods
 
-- ```-f/--format:``` format the episode name
+The priority is as follows:
+
+1) Login details directly provided in parameters
+2) Direct path to login file in parameters
+3) Environment variables
+4) login.json in same directory as executable.
+
+### Optional parameters
+
+- ```-f/--format ""```: format the episode name
   - formatting syntax
     - ```{s}```: series name
     - ```{n}```: episode name
@@ -47,6 +60,6 @@ with the following optional parameters
     - ```{e}/{0e}```: episode number ({0e} is 0-indexed for all episode names less than 10)
   - the default format is {s} - S{0z}E{0e} - {n}
 - ```-u/--undo```: performs an undo of the last operation.
-- ```-s/--series```: provide the series name if the filenames do not contain it.
+- ```-s/--series ""```: provide the series name if the filenames do not contain it.
 - ```-c/--confirm```: provide manual confirmation on every single file operation
-- ```-z/--silent```: provide no user output (does not work with -c)
+- ```-z/--silent```: provide no user output (does not work with ```-c```)
